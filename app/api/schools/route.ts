@@ -63,15 +63,26 @@ export async function POST(request: NextRequest) {
         const filename = `school-${timestamp}-${image.name}`;
         const filepath = `public/schoolImages/${filename}`;
         
-        // Save file
+        // Ensure directory exists
         const fs = require('fs').promises;
+        const path = require('path');
+        const dir = path.dirname(filepath);
+        
+        try {
+          await fs.mkdir(dir, { recursive: true });
+        } catch (mkdirError) {
+          // Directory might already exist
+        }
+        
+        // Save file
         await fs.writeFile(filepath, buffer);
         
         imagePath = `/schoolImages/${filename}`;
         console.log('✅ Image saved successfully:', imagePath);
       } catch (imageError) {
         console.error('❌ Image upload failed:', imageError);
-        // Continue without image
+        // Continue without image - this is important for production
+        console.log('⚠️ Continuing without image due to upload failure');
       }
     }
 

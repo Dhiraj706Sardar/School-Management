@@ -1,12 +1,12 @@
 import mysql from 'mysql2/promise';
 
-// Database configuration with Railway priority
+// Simple database configuration for local development
 const dbConfig = {
-  host: process.env.MYSQLHOST || process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
-  user: process.env.MYSQLUSER || process.env.MYSQL_USER || process.env.DB_USER || 'root',
-  password: process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
-  database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'school_management',
-  port: parseInt(process.env.MYSQLPORT || process.env.MYSQL_PORT || '3306'),
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'school_management',
+  port: parseInt(process.env.DB_PORT || '3306'),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -17,7 +17,7 @@ const dbConfig = {
 
 // Log configuration in development
 if (process.env.NODE_ENV !== 'production') {
-  console.log('Database Configuration:', {
+  console.log('🗄️ Database Configuration:', {
     host: dbConfig.host,
     user: dbConfig.user,
     database: dbConfig.database,
@@ -34,8 +34,9 @@ connection.getConnection()
     console.log('✅ Database connected successfully');
     conn.release();
   })
-  .catch(err => {
+  .catch((err: Error) => {
     console.error('❌ Database connection failed:', err.message);
+    console.error('💡 Make sure MySQL is running and database exists');
   });
 
 export default connection;

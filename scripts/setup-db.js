@@ -1,41 +1,27 @@
 const mysql = require('mysql2/promise');
-const fs = require('fs');
-const path = require('path');
+require('dotenv').config();
 
 async function setupDatabase() {
+  const config = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'school_management',
+    port: parseInt(process.env.DB_PORT || '3306'),
+  };
+
+  console.log('🔧 Setting up local database...');
+  console.log('📍 Host:', config.host);
+  console.log('👤 User:', config.user);
+  console.log('🗄️ Database:', config.database);
+
   try {
-    // Read environment variables
-    require('dotenv').config({ path: '.env.local' });
+    const connection = await mysql.createConnection(config);
     
-    const dbName = process.env.DB_NAME || 'school_management';
-    
-    // First connection without database to create it
-    const connection = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-    });
-
-    console.log('Connected to MySQL server');
-
-    // Create database
-    await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
-    console.log('Database created successfully');
-    
-    await connection.end();
-
-    // Second connection to the specific database
-    const dbConnection = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: dbName,
-    });
-
-    console.log(`Connected to database: ${dbName}`);
+    console.log('✅ Connected to database');
 
     // Create schools table
-    const createTableQuery = `
+    await connection.execute(`
       CREATE TABLE IF NOT EXISTS schools (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -48,27 +34,38 @@ async function setupDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await dbConnection.query(createTableQuery);
-    console.log('Schools table created successfully');
+    console.log('✅ Schools table created');
 
-    // Add indexes
-    try {
-      await dbConnection.query('CREATE INDEX idx_city ON schools(city)');
-      await dbConnection.query('CREATE INDEX idx_state ON schools(state)');
-      await dbConnection.query('CREATE INDEX idx_email ON schools(email_id)');
-      console.log('Indexes created successfully');
-    } catch (indexError) {
-      // Indexes might already exist, that's okay
-      console.log('Indexes already exist or created');
+    // Create indexes
+    await connection.execute('CREATE INDEX IF NOT EXISTS idx_city ON schools(city)');
+    await connection.execute('CREATE INDEX IF NOT EXISTS idx_state ON schools(state)');
+    await connection.execute('CREATE INDEX IF NOT EXISTS idx_email ON schools(email_id)');
+
+    console.log('✅ Indexes created');
+
+    // Check if table has data
+    const [rows] = await connection.execute('SELECT COUNT(*) as count FROM schools');
+    const count = rows[0].count;
+
+    if (count === 0) {
+      // Insert sample data
+      await connection.execute(`
+        INSERT INTO schools (name, address, city, state, contact, email_id) VALUES
+        ('Demo High School', '123 Education Street', 'New York', 'NY', '1234567890', 'info@demohigh.edu'),
+        ('Tech Academy', '456 Innovation Ave', 'San Francisco', 'CA', '9876543210', 'contact@techacademy.edu')
+      `);
+      console.log('✅ Sample data inserted');
+    } else {
+      console.log(`ℹ️ Table already has ${count} records`);
     }
 
-    await dbConnection.end();
-    console.log('Database setup completed successfully!');
-    
+    await connection.end();
+    console.log('🎉 Database setup complete!');
+
   } catch (error) {
-    console.error('Error setting up database:', error);
+    console.error('❌ Database setup failed:', error.message);
     process.exit(1);
   }
 }

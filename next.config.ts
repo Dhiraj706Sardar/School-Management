@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['mysql2'],
   },
+  // Optimize for production
+  output: 'standalone',
+  poweredByHeader: false,
+  compress: true,
 };
 
 export default nextConfig;
