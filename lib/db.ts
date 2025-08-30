@@ -1,6 +1,8 @@
 import mysql from 'mysql2/promise';
 
-// Simple database configuration for local development
+// Database configuration with SSL support for cloud databases
+const isCloudDatabase = process.env.DB_HOST && !process.env.DB_HOST.includes('localhost');
+
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
@@ -13,6 +15,8 @@ const dbConfig = {
   acquireTimeout: 60000,
   timeout: 60000,
   reconnect: true,
+  // SSL configuration for cloud databases like Aiven
+  ssl: isCloudDatabase ? { rejectUnauthorized: false } : undefined,
 };
 
 // Log configuration in development
