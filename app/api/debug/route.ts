@@ -30,14 +30,14 @@ export async function GET() {
     
     try {
       // Test basic connection
-      const [rows] = await db.execute('SELECT 1 as test');
+      await db.execute('SELECT 1 as test');
       connectionTest = 'SUCCESS';
       
       // Check if schools table exists
       try {
-        const [tableCheck] = await db.execute('SELECT COUNT(*) as count FROM schools LIMIT 1');
+        await db.execute('SELECT COUNT(*) as count FROM schools LIMIT 1');
         tableExists = true;
-      } catch (tableError) {
+      } catch {
         tableExists = false;
       }
       

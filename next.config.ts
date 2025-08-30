@@ -10,9 +10,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['mysql2'],
-  },
+  serverExternalPackages: ['mysql2'],
   // Optimize for production
   output: 'standalone',
   poweredByHeader: false,

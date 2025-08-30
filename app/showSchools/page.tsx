@@ -35,7 +35,7 @@ export default function ShowSchools() {
       } else {
         setError('Failed to fetch schools');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to fetch schools');
     } finally {
       setLoading(false);

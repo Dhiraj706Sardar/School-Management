@@ -33,7 +33,7 @@ export async function setupDatabase() {
     for (const indexQuery of indexes) {
       try {
         await db.execute(indexQuery);
-      } catch (error) {
+      } catch {
         // Index might already exist, that's okay
         console.log('Index already exists or created');
       }

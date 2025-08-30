@@ -59,7 +59,7 @@ export default function AddSchool() {
       } else {
         setSubmitMessage(`Error: ${result.error}`);
       }
-    } catch (error) {
+    } catch {
       setSubmitMessage('Failed to add school. Please try again.');
     } finally {
       setIsSubmitting(false);

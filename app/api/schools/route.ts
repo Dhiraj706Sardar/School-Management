@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { upload } from '@/lib/multer';
-import { promisify } from 'util';
+import fs from 'fs/promises';
+import path from 'path';
 
 // GET - Fetch all schools
 export async function GET() {
@@ -64,13 +64,11 @@ export async function POST(request: NextRequest) {
         const filepath = `public/schoolImages/${filename}`;
         
         // Ensure directory exists
-        const fs = require('fs').promises;
-        const path = require('path');
         const dir = path.dirname(filepath);
         
         try {
           await fs.mkdir(dir, { recursive: true });
-        } catch (mkdirError) {
+        } catch {
           // Directory might already exist
         }
         
@@ -93,7 +91,7 @@ export async function POST(request: NextRequest) {
       [name, address, city, state, contact, email_id, imagePath]
     );
 
-    const insertId = (result as any).insertId;
+    const insertId = (result as { insertId: number }).insertId;
     console.log('✅ School added successfully with ID:', insertId);
 
     return NextResponse.json({
