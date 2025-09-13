@@ -1,11 +1,16 @@
 {
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30,
-      "runtime": "nodejs18.x",
       "memory": 1024
     }
   },
-  "regions": ["iad1"],
-  "version": 2
+  "regions": ["iad1"]
 }
