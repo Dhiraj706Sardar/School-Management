@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import fs from 'fs/promises';
-import path from 'path';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 // GET - Fetch all schools
 export async function GET() {
@@ -50,45 +49,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let imagePath = null;
+    let imageUrl = null;
     
+    // Handle image upload to Cloudinary if present
     if (image && image.size > 0) {
       try {
-        console.log('📸 Processing image upload...');
-        // Handle image upload
+        console.log('☁️ Uploading image to Cloudinary...');
+        console.log('Image details:', {
+          name: image.name,
+          type: image.type,
+          size: `${(image.size / 1024).toFixed(2)} KB`,
+          lastModified: image.lastModified ? new Date(image.lastModified).toISOString() : 'N/A'
+        });
+
+        // Convert file to buffer
         const bytes = await image.arrayBuffer();
         const buffer = Buffer.from(bytes);
         
-        const timestamp = Date.now();
-        const filename = `school-${timestamp}-${image.name}`;
-        const filepath = `public/schoolImages/${filename}`;
-        
-        // Ensure directory exists
-        const dir = path.dirname(filepath);
-        
+        // Upload image to Cloudinary only
         try {
-          await fs.mkdir(dir, { recursive: true });
-        } catch {
-          // Directory might already exist
+          imageUrl = await uploadToCloudinary(buffer, 'school-management/schools');
+          console.log('✅ Image uploaded to Cloudinary successfully');
+        } catch (err) {
+          const uploadError = err as Error;
+          console.error('❌ Cloudinary upload failed:', uploadError.message);
+          throw new Error(`Failed to upload image to Cloudinary: ${uploadError.message}`);
         }
-        
-        // Save file
-        await fs.writeFile(filepath, buffer);
-        
-        imagePath = `/schoolImages/${filename}`;
-        console.log('✅ Image saved successfully:', imagePath);
-      } catch (imageError) {
-        console.error('❌ Image upload failed:', imageError);
-        // Continue without image - this is important for production
+      } catch (error) {
+        console.error('❌ Error processing image upload:', error);
+        // Continue without image but log the error
         console.log('⚠️ Continuing without image due to upload failure');
       }
     }
 
-    // Insert into database
-    console.log('💾 Inserting into database...');
+    // Insert into database with Cloudinary URL
+    console.log('💾 Inserting school data into database...');
     const [result] = await db.execute(
       'INSERT INTO schools (name, address, city, state, contact, email_id, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, address, city, state, contact, email_id, imagePath]
+      [name, address, city, state, contact, email_id, imageUrl]
     );
 
     const insertId = (result as { insertId: number }).insertId;
