@@ -61,7 +61,7 @@ function SchoolsContent() {
       const shouldRetry = 
         retryCount < MAX_RETRIES && 
         (err instanceof TypeError || // Network error
-         (err as any).name === 'AbortError' || // Request timeout
+         (err as { name?: string }).name === 'AbortError' || // Request timeout
          (err as Error).message.includes('Failed to fetch'));
       
       if (shouldRetry) {

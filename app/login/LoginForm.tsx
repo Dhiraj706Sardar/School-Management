@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface LoginFormProps {
   readonly redirectTo: string;
@@ -13,8 +12,6 @@ export default function LoginForm({ redirectTo }: LoginFormProps) {
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // Router is kept for potential future use in navigation
-  const _router = useRouter();
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();

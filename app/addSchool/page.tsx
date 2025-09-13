@@ -3,6 +3,7 @@
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 interface UploadResult {
@@ -455,10 +456,12 @@ function AddSchoolContent() {
                 <div className="mb-4">
                   <p className="text-sm text-gray-600 mb-2">Preview:</p>
                   <div className="relative w-full max-w-xs h-48 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden">
-                    <img 
-                      src={imagePreview} 
-                      alt="School preview" 
-                      className="w-full h-full object-cover"
+                    <Image
+                      src={imagePreview}
+                      alt="School preview"
+                      fill
+                      className="object-cover"
+                      priority
                     />
                     <button
                       type="button"

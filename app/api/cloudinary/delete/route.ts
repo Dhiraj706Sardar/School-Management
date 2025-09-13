@@ -36,7 +36,3 @@ export async function POST(request: Request) {
   }
 }
 
-// Add TypeScript type for the request body
-type DeleteRequest = {
-  publicId: string;
-};

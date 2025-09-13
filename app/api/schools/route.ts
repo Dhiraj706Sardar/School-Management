@@ -76,29 +76,6 @@ export async function GET() {
   }
 }
 
-// Helper function to validate school data
-function validateSchoolData(formData: FormData) {
-  const requiredFields = ['name', 'address', 'city', 'state', 'contact', 'email_id'];
-  const missingFields = requiredFields.filter(field => !formData.get(field));
-  
-  if (missingFields.length > 0) {
-    return { 
-      error: `Missing required fields: ${missingFields.join(', ')}`,
-      status: 400
-    };
-  }
-  
-  const schoolData: Omit<School, 'id' | 'created_at' | 'updated_at'> = {
-    name: formData.get('name') as string,
-    address: formData.get('address') as string,
-    city: formData.get('city') as string,
-    state: formData.get('state') as string,
-    contact: formData.get('contact') as string,
-    email_id: formData.get('email_id') as string,
-  };
-  
-  return { schoolData, image: formData.get('image') as File | null };
-}
 
 
 // Helper function to save school to database
@@ -129,37 +106,6 @@ async function saveSchoolToDB(
   }
 }
 
-// Helper function to process and upload image
-async function processImageUpload(image: File) {
-  console.log('📤 Processing image upload...', {
-    name: image.name,
-    type: image.type,
-    size: `${(image.size / 1024).toFixed(2)} KB`
-  });
-  
-  // Validate image size (max 5MB)
-  const maxSize = 5 * 1024 * 1024; // 5MB
-  if (image.size > maxSize) {
-    throw new Error(`Image size must be less than 5MB (${(maxSize / (1024 * 1024)).toFixed(1)}MB)`);
-  }
-  
-  // Validate image type
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!allowedTypes.includes(image.type)) {
-    throw new Error('Only JPG, PNG, and WebP images are allowed');
-  }
-  
-  console.log('☁️ Uploading image to Cloudinary...');
-  const bytes = await image.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  
-  // Upload to Cloudinary with school-specific folder
-  const result = await uploadToCloudinary(buffer, { 
-    folder: 'schools',
-    upload_preset: 'school_images_unsigned'
-  });
-  return result.url;
-}
 
 // POST - Add new school (protected)
 export async function POST(request: NextRequest) {
@@ -265,13 +211,13 @@ export async function PUT(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const updates: Record<string, any> = {};
+    const updates: Record<string, string | null> = {};
     const validFields = ['name', 'address', 'city', 'state', 'contact', 'email_id'];
     
     // Process regular fields
     validFields.forEach(field => {
       const value = formData.get(field);
-      if (value !== null) {
+      if (value !== null && typeof value === 'string') {
         updates[field] = value;
       }
     });

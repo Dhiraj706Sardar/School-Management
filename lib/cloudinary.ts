@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
+import https from 'https';
 
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
@@ -31,7 +32,10 @@ const uploadToLocal = async (buffer: Buffer, filename: string): Promise<{ url: s
 // Extend Cloudinary types to include upload_stream
 declare module 'cloudinary' {
   interface UploadApi {
-    upload_stream(options: UploadApiOptions, callback?: (error?: UploadApiErrorResponse, result?: UploadApiResponse) => void): any;
+    upload_stream(
+      options: UploadApiOptions, 
+      callback?: (error?: UploadApiErrorResponse, result?: UploadApiResponse) => void
+    ): NodeJS.ReadableStream & { on: (event: string, callback: (result: UploadApiResponse) => void) => void };
   }
 }
 
@@ -81,7 +85,7 @@ const initCloudinary = () => {
 
   try {
     // Configure with optimized settings
-    const config: any = {
+    const config: Record<string, string | number | boolean | undefined> = {
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
       api_secret: process.env.CLOUDINARY_API_SECRET,
@@ -108,19 +112,24 @@ const initCloudinary = () => {
     });
     
     // Configure agent for better connection handling
-    const https = require('https');
-    const agent = new https.Agent({
+    const agentOptions: https.AgentOptions = {
       keepAlive: true,
       maxSockets: 25,
       timeout: 60000, // 60 seconds
       rejectUnauthorized: true
-    });
-    
-    // @ts-ignore - Add agent to config
-    cloudinaryBase.config().api = {
-      ...cloudinaryBase.config().api,
-      agent: agent
     };
+    const agent = new https.Agent(agentOptions);
+    
+    // Add agent to config
+    // Safely extend the config with agent
+    const cloudinaryConfig = cloudinaryBase.config() as Record<string, unknown>;
+    if (cloudinaryConfig) {
+      const apiConfig = (cloudinaryConfig.api || {}) as Record<string, unknown>;
+      cloudinaryConfig.api = {
+        ...apiConfig,
+        agent: agent
+      };
+    }
 
     console.log('✅ Cloudinary configured successfully');
     return cloudinaryBase;
@@ -234,10 +243,8 @@ export const uploadToCloudinary = async (
       });
       
       // Pipe the buffer to the upload stream
-      const stream = new Readable();
-      stream.push(buffer);
-      stream.push(null);
-      (stream as any).pipe(uploadStream);
+      const stream = Readable.from(buffer);
+      (stream as NodeJS.ReadableStream).pipe(uploadStream as unknown as NodeJS.WritableStream);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error during upload';
       console.error('❌ Error in uploadToCloudinary:', errorMessage);
@@ -254,11 +261,11 @@ export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
   // Handle local file deletion in development
   if (process.env.NODE_ENV !== 'production') {
     try {
-      const fs = require('fs');
-      const path = require('path');
-      const filePath = path.join(process.cwd(), 'public', 'uploads', publicId);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const { existsSync, unlinkSync } = await import('fs');
+      const { join } = await import('path');
+      const filePath = join(process.cwd(), 'public', 'uploads', publicId);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
         console.log(`✅ Successfully deleted local file: ${publicId}`);
       } else {
         console.warn(`⚠️ File not found: ${publicId}`);
