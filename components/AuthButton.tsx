@@ -1,67 +1,79 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AuthButton() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [isClient, setIsClient] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
-    // Check if user is logged in
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/auth/check', { credentials: 'include' });
-        const data = await response.json();
-        setIsLoggedIn(data.authenticated);
-      } catch (error) {
-        console.error('Error checking auth status:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, [pathname]);
+    setIsClient(true);
+  }, []);
 
   const handleLogout = async () => {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    
     try {
-      await fetch('/api/auth/logout', {
+      // Clear client-side storage first
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        sessionStorage.clear();
+        
+        // Clear all cookies
+        document.cookie.split(';').forEach(cookie => {
+          const [name] = cookie.trim().split('=');
+          document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+        });
+      }
+      
+      // Call the server-side logout endpoint
+      const response = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
       });
-      setIsLoggedIn(false);
+      
+      if (!response.ok) {
+        throw new Error('Logout failed');
+      }
+      
+      // Redirect to login page
       router.push('/login');
       router.refresh();
     } catch (error) {
       console.error('Error logging out:', error);
+      // Even if there's an error, we should still redirect to login
+      router.push('/login');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (loading) {
-    return <div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>;
-  }
-
-  if (isLoggedIn) {
-    return (
-      <button
-        onClick={handleLogout}
-        className="text-sm font-medium text-gray-700 hover:text-gray-900"
-      >
-        Sign out
-      </button>
-    );
+  if (!isClient) {
+    return null;
   }
 
   return (
-    <Link
-      href="/login"
-      className="text-sm font-medium text-gray-700 hover:text-gray-900"
+    <button
+      onClick={handleLogout}
+      disabled={isLoading}
+      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+      aria-label={isLoading ? 'Logging out...' : 'Logout'}
     >
-      Sign in
-    </Link>
+      {isLoading ? (
+        <span className="flex items-center">
+          <span className="animate-spin mr-2">↻</span>
+          <span>Logging out...</span>
+        </span>
+      ) : (
+        <span className="flex items-center">
+          <span className="mr-2">🚪</span>
+          <span>Logout</span>
+        </span>
+      )}
+    </button>
   );
 }

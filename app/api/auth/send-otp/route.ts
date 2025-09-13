@@ -1,33 +1,16 @@
 import { NextResponse } from 'next/server';
-import { sendOtpEmail } from '@/utils/email';
-import db from '@/lib/db';
+import { generateAndSendOTP } from '@/utils/otp';
+import { checkRateLimit, getRateLimitHeaders } from '@/utils/rate-limit';
 
-// In-memory store for OTPs (used as a fallback when database is not available)
-// This is a critical part of our fault tolerance strategy
-// It will be populated when OTPs are generated and stored in memory
-// The Map stores OTPs with their expiration timestamps
-// Structure: Map<email, { otp: string, expiresAt: number }>
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
-
-// Generate a 6-digit OTP
-const generateOtp = (): string => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-// Rate limiting cache
-const rateLimit = new Map<string, { count: number; lastAttempt: number }>();
-const RATE_LIMIT = {
-  WINDOW_MS: 60 * 1000, // 1 minute
-  MAX_REQUESTS: 3,
-};
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    const { email, name } = await request.json();
+    const { email } = await request.json();
 
     if (!email) {
       return NextResponse.json(
-        { error: 'Email is required' },
+        { success: false, error: 'Email is required' },
         { status: 400 }
       );
     }
@@ -36,75 +19,55 @@ export async function POST(request: Request) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return NextResponse.json(
-        { error: 'Invalid email format' },
+        { success: false, error: 'Invalid email format' },
         { status: 400 }
       );
     }
 
     // Check rate limiting
-    const now = Date.now();
     const clientIp = request.headers.get('x-forwarded-for') || 'unknown';
-    const clientData = rateLimit.get(clientIp) || { count: 0, lastAttempt: 0 };
+    const rateLimitResult = await checkRateLimit(clientIp, 'send-otp');
 
-    if (now - clientData.lastAttempt < RATE_LIMIT.WINDOW_MS) {
-      if (clientData.count >= RATE_LIMIT.MAX_REQUESTS) {
-        return NextResponse.json(
-          { 
-            error: 'Too many requests. Please try again later.',
-            retryAfter: Math.ceil((clientData.lastAttempt + RATE_LIMIT.WINDOW_MS - now) / 1000)
-          },
-          { 
-            status: 429,
-            headers: {
-              'Retry-After': String(Math.ceil(RATE_LIMIT.WINDOW_MS / 1000)),
-              'X-RateLimit-Limit': String(RATE_LIMIT.MAX_REQUESTS),
-              'X-RateLimit-Remaining': '0',
-              'X-RateLimit-Reset': String(clientData.lastAttempt + RATE_LIMIT.WINDOW_MS)
-            }
+    if (!rateLimitResult.isAllowed) {
+      const headers = getRateLimitHeaders(rateLimitResult);
+      return new NextResponse(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Too many requests. Please try again later.',
+          retryAfter: rateLimitResult.retryAfter
+        }),
+        { 
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            ...Object.fromEntries(headers.entries())
           }
-        );
-      }
-      clientData.count++;
-    } else {
-      clientData.count = 1;
-      clientData.lastAttempt = now;
-    }
-    rateLimit.set(clientIp, clientData);
-
-    // Generate OTP and set expiry (10 minutes from now)
-    const otp = generateOtp();
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
-
-    try {
-      // Save OTP to database
-      await db.execute(
-        'INSERT INTO otp_verification (email, otp, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp = ?, expires_at = ?',
-        [email, otp, expiresAt, otp, expiresAt]
+        }
       );
-    } catch (dbError) {
-      console.error('Database error:', dbError);
-      // Fallback to in-memory storage if database fails
-      otpStore.set(email, { otp, expiresAt: expiresAt.getTime() });
     }
 
-    // Send OTP via email
-    const { success, error } = await sendOtpEmail({ email, otp, name });
-
-    if (!success) {
-      console.error('Email sending failed:', error);
+    // Generate and send OTP
+    const result = await generateAndSendOTP(email);
+    
+    if (!result.success) {
       return NextResponse.json(
-        { error: 'Failed to send OTP. Please try again later.' },
+        { success: false, error: result.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'OTP sent successfully',
-      // In production, you might want to remove this in production
-      debug: { otp },
+    const response = NextResponse.json({ 
+      success: true, 
+      message: result.message 
     });
+
+    // Add rate limit headers to successful responses
+    const headers = getRateLimitHeaders(rateLimitResult);
+    headers.forEach((value, key) => {
+      response.headers.set(key, value);
+    });
+
+    return response;
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
     console.error('Error in send-otp:', error instanceof Error ? error.message : 'Unknown error');

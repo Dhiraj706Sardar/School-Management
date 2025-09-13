@@ -1,112 +1,383 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import db from '@/lib/db';
 import { uploadToCloudinary } from '@/lib/cloudinary';
+import { verifyToken } from '@/utils/auth';
 
-// GET - Fetch all schools
+export const runtime = 'nodejs';
+
+interface School extends RowDataPacket {
+  id: number;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  contact: string;
+  email_id: string;
+  image: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by?: number;
+}
+
+// Helper function to verify authentication and get user info
+function getAuthenticatedUser(request: NextRequest) {
+  const token = 
+    request.cookies.get('school_management_token')?.value ||
+    request.headers.get('authorization')?.replace('Bearer ', '');
+
+  if (!token) {
+    return { isAuthenticated: false, error: 'No authentication token provided' };
+  }
+
+  const user = verifyToken(token);
+  if (!user) {
+    return { isAuthenticated: false, error: 'Invalid or expired token' };
+  }
+
+  return { 
+    isAuthenticated: true, 
+    userId: user.userId,
+    userEmail: user.email,
+    userRole: user.role || 'user'
+  };
+}
+
+// GET - Fetch all schools (public)
 export async function GET() {
   try {
-    console.log('🔍 Attempting to fetch schools from database...');
-    const [rows] = await db.execute('SELECT * FROM schools ORDER BY id DESC');
-    console.log('✅ Successfully fetched schools:', Array.isArray(rows) ? rows.length : 0, 'records');
-    return NextResponse.json({ success: true, data: rows });
+    console.log('🔍 Fetching all schools...');
+    const [rows] = await db.query<School[]>('SELECT * FROM schools ORDER BY id DESC');
+    
+    // Return only necessary fields for public access
+    const schools = rows.map(school => ({
+      id: school.id,
+      name: school.name,
+      address: school.address,
+      city: school.city,
+      state: school.state,
+      contact: school.contact,
+      email_id: school.email_id,
+      image: school.image
+    }));
+    
+    console.log(`✅ Fetched ${schools.length} schools`);
+    return NextResponse.json({ success: true, data: schools });
   } catch (error) {
-    console.error('❌ Database error in GET /api/schools:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
+    console.error('❌ Error in GET /api/schools:', error);
     return NextResponse.json(
       { 
         success: false, 
         error: 'Failed to fetch schools',
-        details: errorMessage,
-        timestamp: new Date().toISOString()
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
   }
 }
 
-// POST - Add new school
+// Helper function to validate school data
+function validateSchoolData(formData: FormData) {
+  const requiredFields = ['name', 'address', 'city', 'state', 'contact', 'email_id'];
+  const missingFields = requiredFields.filter(field => !formData.get(field));
+  
+  if (missingFields.length > 0) {
+    return { 
+      error: `Missing required fields: ${missingFields.join(', ')}`,
+      status: 400
+    };
+  }
+  
+  const schoolData: Omit<School, 'id' | 'created_at' | 'updated_at'> = {
+    name: formData.get('name') as string,
+    address: formData.get('address') as string,
+    city: formData.get('city') as string,
+    state: formData.get('state') as string,
+    contact: formData.get('contact') as string,
+    email_id: formData.get('email_id') as string,
+  };
+  
+  return { schoolData, image: formData.get('image') as File | null };
+}
+
+
+// Helper function to save school to database
+async function saveSchoolToDB(
+  schoolData: Omit<School, 'id' | 'created_at' | 'updated_at'>,
+  userId: number
+): Promise<number> {
+  try {
+    const [result] = await db.query<ResultSetHeader>(
+      `INSERT INTO schools 
+       (name, address, city, state, contact, email_id, image, created_by) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        schoolData.name,
+        schoolData.address,
+        schoolData.city,
+        schoolData.state,
+        schoolData.contact,
+        schoolData.email_id,
+        schoolData.image, // This is the URL from Cloudinary or local storage
+        userId
+      ]
+    );
+    return result.insertId;
+  } catch (error) {
+    console.error('❌ Database error in saveSchoolToDB:', error);
+    throw new Error('Failed to save school to database');
+  }
+}
+
+// Helper function to process and upload image
+async function processImageUpload(image: File) {
+  console.log('📤 Processing image upload...', {
+    name: image.name,
+    type: image.type,
+    size: `${(image.size / 1024).toFixed(2)} KB`
+  });
+  
+  // Validate image size (max 5MB)
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  if (image.size > maxSize) {
+    throw new Error(`Image size must be less than 5MB (${(maxSize / (1024 * 1024)).toFixed(1)}MB)`);
+  }
+  
+  // Validate image type
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(image.type)) {
+    throw new Error('Only JPG, PNG, and WebP images are allowed');
+  }
+  
+  console.log('☁️ Uploading image to Cloudinary...');
+  const bytes = await image.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+  
+  // Upload to Cloudinary with school-specific folder
+  const result = await uploadToCloudinary(buffer, { 
+    folder: 'schools',
+    upload_preset: 'school_images_unsigned'
+  });
+  return result.url;
+}
+
+// POST - Add new school (protected)
 export async function POST(request: NextRequest) {
   try {
-    console.log('📝 Attempting to add new school...');
-    const formData = await request.formData();
-    
-    const name = formData.get('name') as string;
-    const address = formData.get('address') as string;
-    const city = formData.get('city') as string;
-    const state = formData.get('state') as string;
-    const contact = formData.get('contact') as string;
-    const email_id = formData.get('email_id') as string;
-    const image = formData.get('image') as File;
-
-    console.log('📋 Form data received:', { name, city, state, contact, email_id, hasImage: !!image });
-
-    // Validate required fields
-    if (!name || !address || !city || !state || !contact || !email_id) {
-      console.log('❌ Validation failed: Missing required fields');
+    // Check authentication and get user info
+    const auth = getAuthenticatedUser(request);
+    if (!auth.isAuthenticated || !auth.userId) {
+      console.log('❌ Unauthorized access attempt to POST /api/schools');
       return NextResponse.json(
-        { success: false, error: 'All fields are required' },
+        { success: false, error: auth.error || 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`📝 User ${auth.userEmail} is adding a new school...`);
+    
+    // Parse JSON body
+    let requestData;
+    try {
+      requestData = await request.json();
+    } catch (error) {
+      console.error('❌ Error parsing request body:', error);
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON payload' },
         { status: 400 }
       );
     }
 
-    let imageUrl = null;
+    // Validate required fields
+    const requiredFields = ['name', 'address', 'city', 'state', 'contact', 'email_id'];
+    const missingFields = requiredFields.filter(field => !requestData[field]);
     
-    // Handle image upload to Cloudinary if present
-    if (image && image.size > 0) {
-      try {
-        console.log('☁️ Uploading image to Cloudinary...');
-        console.log('Image details:', {
-          name: image.name,
-          type: image.type,
-          size: `${(image.size / 1024).toFixed(2)} KB`,
-          lastModified: image.lastModified ? new Date(image.lastModified).toISOString() : 'N/A'
-        });
-
-        // Convert file to buffer
-        const bytes = await image.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        
-        // Upload image to Cloudinary only
-        try {
-          imageUrl = await uploadToCloudinary(buffer, 'school-management/schools');
-          console.log('✅ Image uploaded to Cloudinary successfully');
-        } catch (err) {
-          const uploadError = err as Error;
-          console.error('❌ Cloudinary upload failed:', uploadError.message);
-          throw new Error(`Failed to upload image to Cloudinary: ${uploadError.message}`);
-        }
-      } catch (error) {
-        console.error('❌ Error processing image upload:', error);
-        // Continue without image but log the error
-        console.log('⚠️ Continuing without image due to upload failure');
-      }
+    if (missingFields.length > 0) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Missing required fields: ${missingFields.join(', ')}` 
+        },
+        { status: 400 }
+      );
     }
 
-    // Insert into database with Cloudinary URL
-    console.log('💾 Inserting school data into database...');
-    const [result] = await db.execute(
-      'INSERT INTO schools (name, address, city, state, contact, email_id, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, address, city, state, contact, email_id, imageUrl]
-    );
+    // Prepare school data
+    const schoolData = {
+      name: requestData.name.trim(),
+      address: requestData.address.trim(),
+      city: requestData.city.trim(),
+      state: requestData.state.trim(),
+      contact: requestData.contact.trim(),
+      email_id: requestData.email_id.trim().toLowerCase(),
+      image: requestData.image_url || null
+    };
 
-    const insertId = (result as { insertId: number }).insertId;
-    console.log('✅ School added successfully with ID:', insertId);
+    console.log('📋 Processing school data:', schoolData.name);
+    
+    // Use the image URL provided by the client (already uploaded via the client)
+
+    // Save to database
+    console.log('💾 Saving school to database...');
+    const schoolId = await saveSchoolToDB(schoolData, auth.userId);
+    console.log(`✅ School added successfully with ID: ${schoolId}`);
 
     return NextResponse.json({
       success: true,
       message: 'School added successfully',
-      data: { id: insertId }
+      data: { id: schoolId }
     });
 
   } catch (error) {
-    console.error('❌ Error adding school:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Error in POST /api/schools:', error);
     return NextResponse.json(
       { 
         success: false, 
         error: 'Failed to add school',
-        details: errorMessage,
-        timestamp: new Date().toISOString()
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Update a school
+export async function PUT(request: NextRequest) {
+  try {
+    // Check authentication and get user info
+    const auth = getAuthenticatedUser(request);
+    if (!auth.isAuthenticated || !auth.userId) {
+      console.log('❌ Unauthorized access attempt to PUT /api/schools');
+      return NextResponse.json(
+        { success: false, error: auth.error || 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'School ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const formData = await request.formData();
+    const updates: Record<string, any> = {};
+    const validFields = ['name', 'address', 'city', 'state', 'contact', 'email_id'];
+    
+    // Process regular fields
+    validFields.forEach(field => {
+      const value = formData.get(field);
+      if (value !== null) {
+        updates[field] = value;
+      }
+    });
+
+    // Handle image upload if present
+    const image = formData.get('image') as File | null;
+    if (image && image.size > 0) {
+      try {
+        const bytes = await image.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const result = await uploadToCloudinary(buffer, { 
+          folder: 'schools',
+          upload_preset: 'school_images_unsigned'
+        });
+        updates.image = result.url;
+      } catch (error) {
+        console.error('❌ Error uploading image:', error);
+        return NextResponse.json(
+          { success: false, error: 'Failed to upload image' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // Build and execute update query
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No valid fields provided for update' },
+        { status: 400 }
+      );
+    }
+
+    const setClause = Object.keys(updates).map(key => `${key} = ?`).join(', ');
+    const values = [...Object.values(updates), id];
+    
+    await db.execute(
+      `UPDATE schools SET ${setClause} WHERE id = ?`,
+      values
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: 'School updated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error in PUT /api/schools:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Failed to update school',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Remove a school
+export async function DELETE(request: NextRequest) {
+  try {
+    // Check authentication and get user info
+    const auth = getAuthenticatedUser(request);
+    if (!auth.isAuthenticated || !auth.userId) {
+      console.log('❌ Unauthorized access attempt to DELETE /api/schools');
+      return NextResponse.json(
+        { success: false, error: auth.error || 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'School ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // First, get the school to check if it exists and get the image URL
+    const [schools] = await db.execute('SELECT image FROM schools WHERE id = ?', [id]);
+    
+    if (!Array.isArray(schools) || schools.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'School not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete the school from the database
+    await db.execute('DELETE FROM schools WHERE id = ?', [id]);
+
+    return NextResponse.json({
+      success: true,
+      message: 'School deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error in DELETE /api/schools:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Failed to delete school',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
