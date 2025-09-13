@@ -8,9 +8,10 @@
   ],
   "functions": {
     "app/api/**/*.ts": {
-      "maxDuration": 30,
+      "maxDuration": 10,
       "memory": 1024
     }
   },
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "framework": "nextjs"
 }
