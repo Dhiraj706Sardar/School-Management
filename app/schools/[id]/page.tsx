@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 interface School {
@@ -110,11 +111,16 @@ function SchoolDetailContent() {
 
         <div className="bg-white shadow overflow-hidden sm:rounded-lg">
           {school.image_url ? (
-            <img
-              src={school.image_url}
-              alt={school.name}
-              className="w-full h-64 object-cover"
-            />
+            <div className="relative w-full h-64">
+              <Image
+                src={school.image_url}
+                alt={school.name}
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 800px"
+                priority
+              />
+            </div>
           ) : (
             <div className="w-full h-64 bg-gray-200 flex items-center justify-center">
               <span className="text-gray-400">No Image Available</span>

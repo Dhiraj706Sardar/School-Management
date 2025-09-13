@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 interface School {
@@ -97,11 +98,15 @@ function SchoolsContent() {
                 className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow duration-300"
               >
                 {school.image_url ? (
-                  <img
-                    src={school.image_url}
-                    alt={school.name}
-                    className="w-full h-48 object-cover"
-                  />
+                  <div className="relative w-full h-48">
+                    <Image
+                      src={school.image_url}
+                      alt={school.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    />
+                  </div>
                 ) : (
                   <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
                     <span className="text-gray-400">No Image</span>

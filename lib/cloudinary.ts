@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary';
+import { createHash } from 'crypto';
 
 // Log Cloudinary configuration (masking sensitive data)
 const logConfig = {
@@ -47,9 +48,8 @@ export const uploadToCloudinary = async (buffer: Buffer, folder = 'schools'): Pr
   
   // Generate timestamp and signature
   const timestamp = Math.round(new Date().getTime() / 1000);
-  const crypto = require('crypto');
   const paramsToSign = `folder=${folder}&timestamp=${timestamp}${config.api_secret}`;
-  const signature = crypto.createHash('sha1').update(paramsToSign).digest('hex');
+  const signature = createHash('sha1').update(paramsToSign).digest('hex');
   
   const uploadData = {
     file: base64Image,
@@ -119,15 +119,16 @@ export const uploadToCloudinary = async (buffer: Buffer, folder = 'schools'): Pr
 
 // Fallback function to save image locally when Cloudinary fails
 export const saveImageLocally = async (buffer: Buffer, originalName: string): Promise<string> => {
-  const fs = require('fs').promises;
-  const path = require('path');
+  const fs = (await import('fs')).promises;
+  const path = await import('path');
   
   // Create upload directory if it doesn't exist
   const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'schools');
   try {
     await fs.mkdir(uploadDir, { recursive: true });
-  } catch (error) {
+  } catch (err) {
     // Directory might already exist
+    console.log('Directory already exists or could not be created:', err);
   }
   
   // Generate unique filename
@@ -177,7 +178,8 @@ export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
 
 // Helper to extract public ID from Cloudinary URL
 export const getPublicIdFromUrl = (url: string): string | null => {
-  const matches = url.match(/upload\/v\d+\/(.+?)(?:\.\w+)?$/);
+  const regex = /upload\/v\d+\/([^/]+)\.\w+$/;
+  const matches = regex.exec(url);
   return matches ? matches[1] : null;
 };
 

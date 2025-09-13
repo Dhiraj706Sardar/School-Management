@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 import { sendOtpEmail } from '@/utils/email';
 import db from '@/lib/db';
 
-// In-memory store for development (use Redis in production)
+// In-memory store for OTPs (used as a fallback when database is not available)
+// This is a critical part of our fault tolerance strategy
+// It will be populated when OTPs are generated and stored in memory
+// The Map stores OTPs with their expiration timestamps
+// Structure: Map<email, { otp: string, expiresAt: number }>
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 // Generate a 6-digit OTP
@@ -101,10 +105,11 @@ export async function POST(request: Request) {
       // In production, you might want to remove this in production
       debug: { otp },
     });
-  } catch (error: any) {
-    console.error('Error in send-otp:', error);
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
+    console.error('Error in send-otp:', error instanceof Error ? error.message : 'Unknown error');
     
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (err.code === 'ER_DUP_ENTRY') {
       return NextResponse.json(
         { error: 'OTP already sent. Please wait before requesting a new one.' },
         { status: 400 }
